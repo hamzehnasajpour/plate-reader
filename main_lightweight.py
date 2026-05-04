@@ -27,6 +27,8 @@ CONFIDENCE_THRESHOLD = 0.3  # Lower threshold to catch more plates (30%)
 MAX_STORED_IMAGES = 50  # Maximum number of detected plate images to keep
 IMAGES_DIR = "captured_plates"
 SHOW_DISPLAY = True  # Show live camera feed with detection visualization
+MIN_TEXT_LENGTH = 6  # Minimum plate text length
+MAX_TEXT_LENGTH = 6  # Maximum plate text length
 
 # Create images directory if it doesn't exist
 Path(IMAGES_DIR).mkdir(exist_ok=True)
@@ -183,7 +185,7 @@ def extract_plate_text(frame, rect):
         config = '--psm 8 --oem 3 -c tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
         text = pytesseract.image_to_string(upscaled, config=config, timeout=5).strip().upper()
         
-        if text and len(text) >= 3:
+        if text and MIN_TEXT_LENGTH <= len(text) <= MAX_TEXT_LENGTH:
             # Confidence based on text length
             confidence = min(100, len(text) * 15)
             return text, confidence
@@ -196,7 +198,7 @@ def extract_plate_text(frame, rect):
 
 def is_likely_plate(text):
     """Check if text looks like a license plate."""
-    if not text or len(text) < 3:
+    if not text or len(text) < MIN_TEXT_LENGTH or len(text) > MAX_TEXT_LENGTH:
         return False
     
     has_letter = any(c.isalpha() for c in text)
