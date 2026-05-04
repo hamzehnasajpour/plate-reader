@@ -4,4 +4,3 @@ torch==2.1.0
 ultralytics==8.0.208
 pytesseract==0.3.10
 Pillow==10.0.1
-flask==2.3.0  # For web streaming (main_web_stream.py)
