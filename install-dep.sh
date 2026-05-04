@@ -53,6 +53,10 @@ cmake -D CMAKE_BUILD_TYPE=Release ..
 make -j$(nproc)
 sudo make install
 
+# Install Python bindings from source
+cd ../python
+sudo python3 setup.py install
+
 # Configure library path
 sudo ldconfig
 
