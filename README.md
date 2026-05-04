@@ -1,23 +1,21 @@
 # Plate Reader
 
-A Python application that captures video from a USB camera every 2 seconds, detects license plates using YOLOv8, and logs detected plate numbers with timestamps.
+A Python application that captures video from a USB camera every 2 seconds, detects license plates using edge detection, and logs detected plate numbers with timestamps.
 
 ## Features
 
-- **Two detection modes:**
-  - **YOLOv8** (main.py): High accuracy, requires powerful CPU
-  - **Haar Cascade** (main_lightweight.py): Stable on ARM64, good accuracy
 - Captures frames from USB camera at 2-second intervals
+- **Edge detection + contour analysis** - Rectangle detection optimized for license plates
 - Extracts text from detected plates using Tesseract OCR
-- Confidence-based filtering (only logs plates with >50% confidence)
-- Logs results to `plate_log.txt` with timestamp
+- Logs results to `plate_log.txt` with timestamp and confidence
+- **Rotating image storage** - Keeps last 5 detected plate images in `captured_plates/`
 - Optimized for Raspberry Pi and ARM64 systems
 
 ## Requirements
 
 - Python 3.7+
 - USB camera
-- ~2GB available disk space (for model downloads)
+- Tesseract OCR (installed via `install-dep.sh`)
 
 ## Installation
 
@@ -34,13 +32,7 @@ chmod +x install-dep.sh
 ./install-dep.sh
 ```
 
-This will:
-- Install system dependencies
-- Create a Python virtual environment
-- Install all Python packages
-- Download YOLOv8 pre-trained model
-
-The first run may take 15-30 minutes depending on your internet connection.
+This will install system dependencies and Python packages.
 
 ## Usage
 
@@ -50,30 +42,17 @@ The first run may take 15-30 minutes depending on your internet connection.
 source venv/bin/activate
 ```
 
-### Start the plate reader (Lightweight Version - RECOMMENDED)
+### Start the plate reader
 
 ```bash
 python3 main_lightweight.py
 ```
 
-**Recommended for Raspberry Pi/ARM64 systems.**
-- Uses Haar Cascade (built-in to OpenCV)
-- Stable and reliable
-- Lower memory usage
-- Good detection accuracy
-
-### Alternative: Full YOLO Version
-
-```bash
-python3 main.py
-```
-
-**Requirements:**
-- More powerful CPU (not recommended for Raspberry Pi)
-- Higher memory usage
-- Better accuracy on different plate styles
-
-**Note:** On ARM64 systems like Raspberry Pi, YOLO may cause segmentation faults due to memory constraints. Use `main_lightweight.py` instead.
+This will:
+- Continuously capture frames from your USB camera
+- Detect license plates using edge detection
+- Log recognized plates to `plate_log.txt`
+- Save detected frames to `captured_plates/` (rotating, keeps last 5)
 
 ## Output Format
 
@@ -82,53 +61,83 @@ Detected plates are saved in `plate_log.txt`:
 ```
 Registration Number | Timestamp
 ==================================================
-ABC123D (75.5%) | 2026-05-04 14:23:45
-XYZ789K (82.3%) | 2026-05-04 14:24:30
+AAA000 (90.0%) | 2026-05-04 21:39:07
+IGAAA000 (100.0%) | 2026-05-04 21:39:14
 ```
+
 ### Captured Images
 
-When a plate is detected, the frame is automatically saved to the `captured_plates/` directory:
+When a plate is detected, the frame is automatically saved:
 
 ```
 captured_plates/
-├── 20260504_142345_ABC123D.jpg
-├── 20260504_142430_XYZ789K.jpg
-├── 20260504_142515_MNO456P.jpg
-├── 20260504_142600_DEF789Q.jpg
-└── 20260504_142645_RST012R.jpg
+├── plate_001.jpg  (most recent)
+├── plate_002.jpg
+├── plate_003.jpg
+├── plate_004.jpg
+└── plate_005.jpg  (oldest, deleted when new one added)
 ```
 
-**Rotating Storage:** Only the last 5 detected plate images are kept. Older images are automatically deleted when the limit is reached.
 ## Configuration
 
-Edit `main.py` to adjust:
+Edit `main_lightweight.py` to adjust:
 - `CAMERA_INDEX`: USB camera index (default: 0)
 - `CAPTURE_INTERVAL`: Capture frequency in seconds (default: 2)
+- `CONFIDENCE_THRESHOLD`: Minimum confidence to log (default: 0.3 = 30%)
 - `OUTPUT_FILE`: Log file name (default: plate_log.txt)
-- `CONFIDENCE_THRESHOLD`: Minimum confidence to log (default: 50%)
 
 ## How It Works
 
-1. **YOLOv8 Detection**: Scans each frame for objects that look like license plates
-2. **Image Enhancement**: Enhances the detected region for better text recognition
-3. **EasyOCR**: Extracts the text from the detected plate
-4. **Validation**: Checks if the detected text looks like a valid plate (mix of letters/numbers)
-5. **Logging**: Records valid detections with timestamps
-
-## Performance
-
-- **Detection Speed**: ~30-50ms per frame (on ARM64)
-- **Memory Usage**: ~500MB with models loaded
-- **Accuracy**: Works best with:
-  - Well-lit conditions
-  - Clear, straight-on plate views
-  - Plates at normal distance (not too close/far)
+1. **Frame Capture**: Grab frames from USB camera every 2 seconds
+2. **Edge Detection**: Find object boundaries using Canny edge detection
+3. **Contour Analysis**: Find rectangular regions matching license plate proportions
+4. **Region Filtering**: Keep only rectangles with aspect ratio 2-5x (width/height)
+5. **Image Enhancement**: Apply CLAHE contrast + adaptive threshold + upscaling
+6. **OCR Extraction**: Use Tesseract to read text from enhanced regions
+7. **Validation**: Check for both letters and digits to confirm valid plate
+8. **Logging & Storage**: Record to `plate_log.txt` and save frame to `captured_plates/`
 
 ## Troubleshooting
 
-- **Segmentation fault**: Use `main_lightweight.py` instead of `main.py` on ARM64/Raspberry Pi
-- **Camera not detected**: Run `python3 find_camera.py` to find your camera index
-- **No plates detected**: Improve lighting or move camera closer to plates
-- **Memory issues**: Reduce `CAPTURE_INTERVAL` or use lightweight version
-- **Tesseract not found**: Install with `sudo apt-get install tesseract-ocr`
+See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for detailed debug procedures.
+
+### Quick Debug Commands
+
+```bash
+# Test camera and save mechanism
+python3 debug/test_frame_save.py
+
+# Find available USB cameras
+python3 debug/find_camera.py
+
+# Test detection on saved frames
+python3 debug/analyze_test_frames_v2.py
+
+# Visualize detected regions
+python3 debug/extract_regions.py
+```
+
+### Common Issues
+
+- **No plates detected**: Check camera angle, lighting, and plate distance
+- **Camera not found**: Run `python3 debug/find_camera.py`
+- **Tesseract error**: Install with `sudo apt-get install tesseract-ocr`
+- **Memory issues**: Reduce `CAPTURE_INTERVAL` or check `free -h`
+
+## Project Structure
+
+```
+plate-reader/
+├── main_lightweight.py       # Main app (recommended)
+├── main.py                   # Full version (YOLOv8 - not recommended for ARM64)
+├── plate_log.txt             # Output log
+├── captured_plates/          # Detected plate images (rotating, last 5)
+├── test_frames/              # Test frames from camera
+├── debug/                    # Debug and analysis scripts
+│   ├── test_frame_save.py
+│   ├── find_camera.py
+│   ├── analyze_test_frames_v2.py
+│   └── extract_regions.py
+└── requirements.txt          # Python dependencies
+```
 

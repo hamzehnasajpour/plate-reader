@@ -24,13 +24,13 @@ CAMERA_INDEX = 0
 CAPTURE_INTERVAL = 2
 OUTPUT_FILE = "plate_log.txt"
 CONFIDENCE_THRESHOLD = 0.3  # Lower threshold to catch more plates (30%)
-MAX_STORED_IMAGES = 5
+MAX_STORED_IMAGES = 50  # Maximum number of detected plate images to keep
 IMAGES_DIR = "captured_plates"
 
 # Create images directory if it doesn't exist
 Path(IMAGES_DIR).mkdir(exist_ok=True)
 
-# Store last 5 images in a rotating buffer
+# Store last N images in a rotating buffer (tracks filenames only)
 image_buffer = deque(maxlen=MAX_STORED_IMAGES)
 
 # Load Haar Cascade classifier for license plates
@@ -53,8 +53,28 @@ def init_log_file():
             f.write("=" * 50 + "\n")
 
 
-def log_plate(plate_number, confidence=None, frame=None):
-    """Log detected plate number with timestamp and save frame."""
+def cleanup_old_images():
+    """Delete image files that are no longer in the buffer."""
+    # Get all image files in the directory
+    try:
+        all_files = sorted([f for f in os.listdir(IMAGES_DIR) if f.endswith('.jpg')])
+        # Get current files in buffer (just the filenames, not full paths)
+        buffer_filenames = [os.path.basename(f) for f in image_buffer]
+        
+        # Delete files that aren't in the buffer
+        for file in all_files:
+            if file not in buffer_filenames:
+                file_path = os.path.join(IMAGES_DIR, file)
+                try:
+                    os.remove(file_path)
+                except OSError:
+                    pass
+    except Exception as e:
+        print(f"Cleanup warning: {e}", file=sys.stderr)
+
+
+def log_plate(plate_number, confidence=None, frame=None, rect=None):
+    """Log detected plate number with timestamp and save frame with bounding box."""
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     timestamp_file = datetime.now().strftime("%Y%m%d_%H%M%S")
     conf_str = f" ({confidence:.1f}%)" if confidence else ""
@@ -67,9 +87,21 @@ def log_plate(plate_number, confidence=None, frame=None):
     
     # Save frame if provided
     if frame is not None:
+        # Draw bounding box around detected plate if coordinates provided
+        frame_with_box = frame.copy()
+        if rect is not None:
+            x, y, w, h = rect
+            # Draw rectangle with green color, thickness 2
+            cv2.rectangle(frame_with_box, (x, y), (x+w, y+h), (0, 255, 0), 2)
+            # Draw text label above the box
+            text_pos = (x, max(y - 5, 25))
+            cv2.putText(frame_with_box, f"{plate_number} ({confidence:.0f}%)", text_pos, 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+        
         image_filename = f"{IMAGES_DIR}/{timestamp_file}_{plate_number}.jpg"
-        cv2.imwrite(image_filename, frame)
+        cv2.imwrite(image_filename, frame_with_box)
         image_buffer.append(image_filename)
+        cleanup_old_images()  # Remove files that are no longer in buffer
         print(f"  Saved: {image_filename}")
 
 
@@ -208,7 +240,7 @@ def capture_and_analyze():
                                     
                                     # Avoid duplicates
                                     if plate_text != last_detected_plate or (current_time - last_detection_time) > 5:
-                                        log_plate(plate_text, ocr_conf, frame)
+                                        log_plate(plate_text, ocr_conf, frame, (x, y, w, h))
                                         last_detected_plate = plate_text
                                         last_detection_time = current_time
                     

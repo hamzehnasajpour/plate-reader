@@ -41,8 +41,14 @@ plate_log.txt
 *.log
 captured_frames/
 captured_plates/
+captured_plates_debug/
+test_frames/
+plate_analysis/
+plate_analysis_v2/
+extracted_plate_regions/
 *.jpg
 *.png
+*.jpeg
 
 # OS
 .DS_Store
