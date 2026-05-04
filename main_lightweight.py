@@ -30,6 +30,14 @@ SHOW_DISPLAY = True  # Show live camera feed with detection visualization
 MIN_TEXT_LENGTH = 6  # Minimum plate text length
 MAX_TEXT_LENGTH = 6  # Maximum plate text length
 
+# Detection Filters (adjust to reduce false positives)
+MIN_ASPECT_RATIO = 2.0  # Width/Height ratio lower bound (plates are wider)
+MAX_ASPECT_RATIO = 5.0  # Width/Height ratio upper bound
+MIN_WIDTH = 30  # Minimum region width in pixels
+MIN_HEIGHT = 10  # Minimum region height in pixels
+MIN_FILL_RATIO = 0.4  # Minimum contour fill ratio (0.0-1.0)
+MAX_FILL_RATIO = 0.95  # Maximum contour fill ratio (0.0-1.0)
+
 # Create images directory if it doesn't exist
 Path(IMAGES_DIR).mkdir(exist_ok=True)
 
@@ -272,14 +280,14 @@ def capture_and_analyze():
                         
                         ratio = w / h if h > 0 else 0
                         
-                        # License plates are typically 2-5 times wider than tall
-                        if 2 < ratio < 5 and w > 30 and h > 10:
+                        # License plates are typically wider than tall (configurable ratio)
+                        if MIN_ASPECT_RATIO < ratio < MAX_ASPECT_RATIO and w > MIN_WIDTH and h > MIN_HEIGHT:
                             # Check fill ratio
                             area = w * h
                             contour_area = cv2.contourArea(contour)
                             fill_ratio = contour_area / area if area > 0 else 0
                             
-                            if 0.4 < fill_ratio < 0.95:
+                            if MIN_FILL_RATIO < fill_ratio < MAX_FILL_RATIO:
                                 detected_rectangles.append((x, y, w, h))
                                 
                                 plate_text, ocr_conf = extract_plate_text(frame, (x, y, w, h))
