@@ -6,11 +6,11 @@ A Python application that captures video from a USB camera every 2 seconds, dete
 
 - Captures frames from USB camera at 2-second intervals
 - Detects license plates using YOLOv8 (object detection)
-- Extracts text from plates using EasyOCR
+- Extracts text from plates using Tesseract OCR
 - Confidence-based filtering (only logs plates with >50% confidence)
 - Logs results to `plate_log.txt` with timestamp
 - Real-time camera feed display
-- No complex system dependencies (pure Python solution)
+- Lightweight solution optimized for ARM64 (Raspberry Pi, etc)
 
 ## Requirements
 

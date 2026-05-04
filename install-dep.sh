@@ -22,7 +22,8 @@ sudo apt-get install -y \
     libatlas-base-dev \
     libtiff5 \
     libharfbuzz0b \
-    libwebp6
+    libwebp6 \
+    tesseract-ocr
 
 echo "[2/2] Creating Python virtual environment and installing Python packages..."
 
