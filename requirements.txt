@@ -1,0 +1,3 @@
+opencv-python==4.8.1.78
+openalpr==0.0.5
+Pillow==10.0.1
