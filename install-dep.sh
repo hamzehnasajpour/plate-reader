@@ -33,7 +33,8 @@ sudo apt-get install -y \
     libtesseract-dev \
     libleptonica-dev \
     libopencv-dev \
-    python3-opencv
+    python3-opencv \
+    liblog4cplus-dev
 
 echo "[3/4] Installing OpenALPR from source..."
 cd /tmp
