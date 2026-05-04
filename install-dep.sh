@@ -16,22 +16,49 @@ if [[ ! "$OSTYPE" == "linux-gnu"* ]]; then
     echo "Warning: This script is designed for Linux. macOS users should use Homebrew."
 fi
 
-echo "[1/3] Updating system packages..."
+echo "[1/4] Updating system packages..."
 sudo apt-get update
 
-echo "[2/3] Installing system dependencies..."
+echo "[2/4] Installing build dependencies..."
 sudo apt-get install -y \
-    openalpr \
-    openalpr-daemon \
-    libopenalpr-dev \
     python3-dev \
     python3-pip \
     python3-venv \
     build-essential \
     cmake \
-    git
+    git \
+    curl \
+    wget \
+    libcurl4-openssl-dev \
+    libtesseract-dev \
+    libleptonica-dev
 
-echo "[3/3] Creating Python virtual environment and installing Python packages..."
+echo "[3/4] Installing OpenALPR from source..."
+cd /tmp
+
+# Clone OpenALPR repository
+if [ ! -d "openalpr" ]; then
+    git clone https://github.com/openalpr/openalpr.git
+fi
+
+cd openalpr/src
+mkdir -p build
+cd build
+
+# Build and install OpenALPR
+cmake -D CMAKE_BUILD_TYPE=Release ..
+make -j$(nproc)
+sudo make install
+
+# Configure library path
+sudo ldconfig
+
+echo "✓ OpenALPR installed successfully"
+
+echo "[4/4] Creating Python virtual environment and installing Python packages..."
+
+# Navigate back to project directory
+cd /home/hamzeh/dev/plate-reader
 
 # Create virtual environment if it doesn't exist
 if [ ! -d "venv" ]; then
