@@ -63,17 +63,24 @@ echo "[4/4] Creating Python virtual environment and installing Python packages..
 # Navigate back to project directory
 cd /home/hamzeh/dev/plate-reader
 
-# Create virtual environment if it doesn't exist
-if [ ! -d "venv" ]; then
-    python3 -m venv venv
-    echo "✓ Virtual environment created"
+# Remove existing venv to ensure clean installation
+if [ -d "venv" ]; then
+    echo "Removing existing virtual environment..."
+    rm -rf venv
 fi
+
+# Create fresh virtual environment
+python3 -m venv venv
+echo "✓ Virtual environment created"
 
 # Activate virtual environment
 source venv/bin/activate
 
-# Upgrade pip
+# Upgrade pip, setuptools, and wheel
 pip install --upgrade pip setuptools wheel
+
+# Install numpy first (required for OpenCV)
+pip install numpy==1.23.5
 
 # Install Python dependencies
 pip install -r requirements.txt
