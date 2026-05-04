@@ -26,6 +26,7 @@ OUTPUT_FILE = "plate_log.txt"
 CONFIDENCE_THRESHOLD = 0.3  # Lower threshold to catch more plates (30%)
 MAX_STORED_IMAGES = 50  # Maximum number of detected plate images to keep
 IMAGES_DIR = "captured_plates"
+SHOW_DISPLAY = True  # Show live camera feed with detection visualization
 
 # Create images directory if it doesn't exist
 Path(IMAGES_DIR).mkdir(exist_ok=True)
@@ -44,6 +45,46 @@ if cascade.empty():
 
 print("✓ Haar Cascade classifier loaded")
 
+def draw_ui_overlay(frame, detection_count, is_scanning, detected_rectangles, valid_plates):
+    """
+    Draw UI overlay with status information and detection rectangles.
+    
+    Args:
+        frame: Input frame
+        detection_count: Number of detection cycles
+        is_scanning: Whether currently in detection mode
+        detected_rectangles: List of (x, y, w, h) all detected regions
+        valid_plates: List of (x, y, w, h, text, conf) valid plates
+    """
+    display_frame = frame.copy()
+    h, w = display_frame.shape[:2]
+    
+    # Draw all detected regions (yellow boxes)
+    for x, y, bw, bh in detected_rectangles:
+        cv2.rectangle(display_frame, (x, y), (x+bw, y+bh), (0, 255, 255), 1)
+    
+    # Draw valid plates (green boxes with text)
+    for x, y, bw, bh, text, conf in valid_plates:
+        cv2.rectangle(display_frame, (x, y), (x+bw, y+bh), (0, 255, 0), 2)
+        text_label = f"{text} ({conf:.0f}%)"
+        text_pos = (x, max(y - 5, 25))
+        cv2.putText(display_frame, text_label, text_pos, 
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+    
+    # Draw status bar at top
+    status_bar_height = 30
+    cv2.rectangle(display_frame, (0, 0), (w, status_bar_height), (50, 50, 50), -1)
+    
+    # Status text
+    scan_status = "[SCANNING]" if is_scanning else "[READY]"
+    status_text = f"Detection #{detection_count} {scan_status}"
+    cv2.putText(display_frame, status_text, (10, 22), 
+               cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 1)
+    
+    cv2.putText(display_frame, "Press 'q' to quit", (w - 180, 22),
+               cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1)
+    
+    return display_frame
 
 def init_log_file():
     """Initialize the log file with header if it doesn't exist."""
@@ -183,6 +224,11 @@ def capture_and_analyze():
     last_detection_time = 0
     detection_count = 0
     
+    # Create display window if enabled
+    if SHOW_DISPLAY:
+        cv2.namedWindow("License Plate Reader", cv2.WINDOW_NORMAL)
+        cv2.resizeWindow("License Plate Reader", 960, 720)
+    
     try:
         while True:
             ret, frame = cap.read()
@@ -192,9 +238,12 @@ def capture_and_analyze():
                 break
             
             current_time = time.time()
+            is_scanning = (current_time - last_capture_time) >= CAPTURE_INTERVAL
+            detected_rectangles = []
+            valid_plates = []
             
             # Detect every CAPTURE_INTERVAL seconds
-            if current_time - last_capture_time >= CAPTURE_INTERVAL:
+            if is_scanning:
                 last_capture_time = current_time
                 detection_count += 1
                 
@@ -230,6 +279,8 @@ def capture_and_analyze():
                             fill_ratio = contour_area / area if area > 0 else 0
                             
                             if 0.4 < fill_ratio < 0.95:
+                                detected_rectangles.append((x, y, w, h))
+                                
                                 plate_text, ocr_conf = extract_plate_text(frame, (x, y, w, h))
                                 
                                 if plate_text:
@@ -237,6 +288,7 @@ def capture_and_analyze():
                                 
                                 if plate_text and is_likely_plate(plate_text) and ocr_conf >= CONFIDENCE_THRESHOLD:
                                     detections_found = True
+                                    valid_plates.append((x, y, w, h, plate_text, ocr_conf))
                                     
                                     # Avoid duplicates
                                     if plate_text != last_detected_plate or (current_time - last_detection_time) > 5:
@@ -252,6 +304,17 @@ def capture_and_analyze():
                 except Exception as e:
                     print(f"Detection error: {e}", file=sys.stderr)
                     continue
+            
+            # Display live feed with overlay
+            if SHOW_DISPLAY:
+                display_frame = draw_ui_overlay(frame, detection_count, is_scanning, 
+                                               detected_rectangles, valid_plates)
+                cv2.imshow("License Plate Reader", display_frame)
+                
+                key = cv2.waitKey(1) & 0xFF
+                if key == ord('q'):
+                    print("\nStopping...")
+                    break
     
     except KeyboardInterrupt:
         print("\nStopping...")
@@ -261,6 +324,8 @@ def capture_and_analyze():
         traceback.print_exc()
     finally:
         cap.release()
+        if SHOW_DISPLAY:
+            cv2.destroyAllWindows()
         print(f"Results saved to {OUTPUT_FILE}")
 
 
