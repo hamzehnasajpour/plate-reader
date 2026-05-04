@@ -22,9 +22,10 @@ except ImportError:
 
 # Configuration
 CAMERA_INDEX = 0  # Default USB camera (change if using a different camera)
-CAPTURE_INTERVAL = 2  # Capture every 2 seconds
+CAPTURE_INTERVAL = 10  # Capture every 10 seconds
 OUTPUT_FILE = "plate_log.txt"
 CONFIDENCE_THRESHOLD = 0.5  # Only log plates with >50% confidence
+HEADLESS_MODE = True  # Set to False if display is available
 
 # Global model variables (lazy loaded)
 yolo_model = None
@@ -85,17 +86,17 @@ def extract_plate_text(frame, box):
         # Upscale for better OCR accuracy
         upscaled = cv2.resize(binary, (0, 0), fx=2, fy=2)
         
-        # Run Tesseract OCR
+        # Run Tesseract OCR with optimized settings
         config = '--psm 8 -c tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
-        text = pytesseract.image_to_string(upscaled, config=config).strip().upper()
+        text = pytesseract.image_to_string(upscaled, config=config, timeout=5).strip().upper()
         
         if text and len(text) >= 3:
             # Confidence based on text length
             confidence = min(100, len(text) * 15)
             return text, confidence
     except Exception as e:
-        # Silently skip OCR errors to avoid crashes
-        pass
+        # Log error but continue processing
+        print(f"OCR error: {e}", file=sys.stderr)
     
     return None, 0
 
@@ -177,21 +178,22 @@ def capture_and_analyze():
                         print(".", end="", flush=True)
                         
                 except Exception as e:
-                    print(f"Error during detection: {e}")
+                    print(f"Error during detection: {e}", file=sys.stderr)
                     continue
             
-            # Display frame with detection
-            cv2.imshow("Plate Reader", frame)
-            
-            # Press 'q' to quit
-            if cv2.waitKey(1) & 0xFF == ord('q'):
-                print("\nExiting...")
-                break
+            # Display frame only if not in headless mode
+            if not HEADLESS_MODE:
+                cv2.imshow("Plate Reader", frame)
+                # Press 'q' to quit
+                if cv2.waitKey(1) & 0xFF == ord('q'):
+                    print("\nExiting...")
+                    break
     
     finally:
         cap.release()
-        cv2.destroyAllWindows()
-        print(f"Results saved to {OUTPUT_FILE}")
+        if not HEADLESS_MODE:
+            cv2.destroyAllWindows()
+        print(f"\nResults saved to {OUTPUT_FILE}")
 
 
 if __name__ == "__main__":
