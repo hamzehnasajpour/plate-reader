@@ -4,13 +4,14 @@ A Python application that captures video from a USB camera every 2 seconds, dete
 
 ## Features
 
+- **Two detection modes:**
+  - **YOLOv8** (main.py): High accuracy, requires powerful CPU
+  - **Haar Cascade** (main_lightweight.py): Stable on ARM64, good accuracy
 - Captures frames from USB camera at 2-second intervals
-- Detects license plates using YOLOv8 (object detection)
-- Extracts text from plates using Tesseract OCR
+- Extracts text from detected plates using Tesseract OCR
 - Confidence-based filtering (only logs plates with >50% confidence)
 - Logs results to `plate_log.txt` with timestamp
-- Real-time camera feed display
-- Lightweight solution optimized for ARM64 (Raspberry Pi, etc)
+- Optimized for Raspberry Pi and ARM64 systems
 
 ## Requirements
 
@@ -49,19 +50,30 @@ The first run may take 15-30 minutes depending on your internet connection.
 source venv/bin/activate
 ```
 
-### Start the plate reader
+### Start the plate reader (Lightweight Version - RECOMMENDED)
+
+```bash
+python3 main_lightweight.py
+```
+
+**Recommended for Raspberry Pi/ARM64 systems.**
+- Uses Haar Cascade (built-in to OpenCV)
+- Stable and reliable
+- Lower memory usage
+- Good detection accuracy
+
+### Alternative: Full YOLO Version
 
 ```bash
 python3 main.py
 ```
 
-The application will:
-1. Open your USB camera
-2. Capture frames every 2 seconds
-3. Analyze for license plates
-4. Log detected plates to `plate_log.txt`
+**Requirements:**
+- More powerful CPU (not recommended for Raspberry Pi)
+- Higher memory usage
+- Better accuracy on different plate styles
 
-Press **'q'** to quit the application.
+**Note:** On ARM64 systems like Raspberry Pi, YOLO may cause segmentation faults due to memory constraints. Use `main_lightweight.py` instead.
 
 ## Output Format
 
@@ -101,8 +113,9 @@ Edit `main.py` to adjust:
 
 ## Troubleshooting
 
-- **Camera not detected**: Check USB connection and try changing `CAMERA_INDEX` (1, 2, etc.)
-- **No plates detected**: Improve lighting and ensure plates are clearly visible
-- **Slow performance**: YOLOv8 Nano model is optimized for speed; first-run model download may be slow
-- **Memory issues**: Reduce frame resolution or capture interval
+- **Segmentation fault**: Use `main_lightweight.py` instead of `main.py` on ARM64/Raspberry Pi
+- **Camera not detected**: Run `python3 find_camera.py` to find your camera index
+- **No plates detected**: Improve lighting or move camera closer to plates
+- **Memory issues**: Reduce `CAPTURE_INTERVAL` or use lightweight version
+- **Tesseract not found**: Install with `sudo apt-get install tesseract-ocr`
 
