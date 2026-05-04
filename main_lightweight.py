@@ -23,7 +23,7 @@ except ImportError:
 CAMERA_INDEX = 0
 CAPTURE_INTERVAL = 2
 OUTPUT_FILE = "plate_log.txt"
-CONFIDENCE_THRESHOLD = 0.5
+CONFIDENCE_THRESHOLD = 0.3  # Lower threshold to catch more plates (30%)
 MAX_STORED_IMAGES = 5
 IMAGES_DIR = "captured_plates"
 
@@ -122,12 +122,15 @@ def capture_and_analyze():
         return
     
     print(f"Camera opened. Capturing every {CAPTURE_INTERVAL} seconds...")
+    print(f"Confidence threshold: {CONFIDENCE_THRESHOLD * 100}%")
+    print(f"Images saved to: {IMAGES_DIR}/")
     print("Press Ctrl+C to stop\n")
     
     init_log_file()
     last_capture_time = 0
     last_detected_plate = None
     last_detection_time = 0
+    detection_count = 0
     
     try:
         while True:
@@ -142,11 +145,14 @@ def capture_and_analyze():
             # Detect every CAPTURE_INTERVAL seconds
             if current_time - last_capture_time >= CAPTURE_INTERVAL:
                 last_capture_time = current_time
+                detection_count += 1
                 
                 try:
                     # Detect objects (regions of interest)
                     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
                     rects = cascade.detectMultiScale(gray, 1.3, 5)
+                    
+                    print(f"\n[{datetime.now().strftime('%H:%M:%S')}] Detection #{detection_count}: Found {len(rects)} objects", end="")
                     
                     detections_found = False
                     
@@ -155,8 +161,13 @@ def capture_and_analyze():
                         # Filter by aspect ratio (license plates are typically wider)
                         ratio = w / h if h > 0 else 0
                         
-                        if 2 < ratio < 5 and w > 40 and h > 15:  # License plate typical proportions
+                        # More flexible ratio: 1.5 to 6 (wider range for different plate types)
+                        if 1.5 < ratio < 6 and w > 30 and h > 10:  # Loosen constraints
+                            print(f" -> Plate-like region detected (ratio: {ratio:.2f})", end="")
                             plate_text, ocr_conf = extract_plate_text(frame, (x, y, w, h))
+                            
+                            if plate_text:
+                                print(f" -> OCR result: '{plate_text}' ({ocr_conf:.1f}%)", end="")
                             
                             if plate_text and is_likely_plate(plate_text) and ocr_conf >= CONFIDENCE_THRESHOLD:
                                 detections_found = True
@@ -168,7 +179,9 @@ def capture_and_analyze():
                                     last_detection_time = current_time
                     
                     if not detections_found:
-                        print(".", end="", flush=True)
+                        print(" [no valid plates]", end="")
+                    
+                    print()  # New line
                         
                 except Exception as e:
                     print(f"Detection error: {e}", file=sys.stderr)
