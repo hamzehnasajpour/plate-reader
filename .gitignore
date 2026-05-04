@@ -40,6 +40,7 @@ env/
 plate_log.txt
 *.log
 captured_frames/
+captured_plates/
 *.jpg
 *.png
 

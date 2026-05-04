@@ -85,7 +85,20 @@ Registration Number | Timestamp
 ABC123D (75.5%) | 2026-05-04 14:23:45
 XYZ789K (82.3%) | 2026-05-04 14:24:30
 ```
+### Captured Images
 
+When a plate is detected, the frame is automatically saved to the `captured_plates/` directory:
+
+```
+captured_plates/
+├── 20260504_142345_ABC123D.jpg
+├── 20260504_142430_XYZ789K.jpg
+├── 20260504_142515_MNO456P.jpg
+├── 20260504_142600_DEF789Q.jpg
+└── 20260504_142645_RST012R.jpg
+```
+
+**Rotating Storage:** Only the last 5 detected plate images are kept. Older images are automatically deleted when the limit is reached.
 ## Configuration
 
 Edit `main.py` to adjust:
