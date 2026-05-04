@@ -10,6 +10,8 @@ import time
 from datetime import datetime
 import os
 import sys
+from collections import deque
+from pathlib import Path
 
 try:
     import pytesseract
@@ -22,6 +24,14 @@ CAMERA_INDEX = 0
 CAPTURE_INTERVAL = 2
 OUTPUT_FILE = "plate_log.txt"
 CONFIDENCE_THRESHOLD = 0.5
+MAX_STORED_IMAGES = 5
+IMAGES_DIR = "captured_plates"
+
+# Create images directory if it doesn't exist
+Path(IMAGES_DIR).mkdir(exist_ok=True)
+
+# Store last 5 images in a rotating buffer
+image_buffer = deque(maxlen=MAX_STORED_IMAGES)
 
 # Load Haar Cascade classifier for license plates
 # Using car cascade as fallback (less specialized but more reliable on ARM64)
@@ -43,9 +53,10 @@ def init_log_file():
             f.write("=" * 50 + "\n")
 
 
-def log_plate(plate_number, confidence=None):
-    """Log detected plate number with timestamp."""
+def log_plate(plate_number, confidence=None, frame=None):
+    """Log detected plate number with timestamp and save frame."""
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    timestamp_file = datetime.now().strftime("%Y%m%d_%H%M%S")
     conf_str = f" ({confidence:.1f}%)" if confidence else ""
     log_entry = f"{plate_number}{conf_str} | {timestamp}\n"
     
@@ -53,6 +64,13 @@ def log_plate(plate_number, confidence=None):
         f.write(log_entry)
     
     print(f"✓ Detected: {plate_number}{conf_str} at {timestamp}")
+    
+    # Save frame if provided
+    if frame is not None:
+        image_filename = f"{IMAGES_DIR}/{timestamp_file}_{plate_number}.jpg"
+        cv2.imwrite(image_filename, frame)
+        image_buffer.append(image_filename)
+        print(f"  Saved: {image_filename}")
 
 
 def extract_plate_text(frame, rect):
@@ -145,7 +163,7 @@ def capture_and_analyze():
                                 
                                 # Avoid duplicates
                                 if plate_text != last_detected_plate or (current_time - last_detection_time) > 5:
-                                    log_plate(plate_text, ocr_conf)
+                                    log_plate(plate_text, ocr_conf, frame)
                                     last_detected_plate = plate_text
                                     last_detection_time = current_time
                     
