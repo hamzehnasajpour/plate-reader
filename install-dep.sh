@@ -20,13 +20,7 @@ sudo apt-get install -y \
     python3-venv \
     build-essential \
     libatlas-base-dev \
-    libjasper-dev \
     libtiff5 \
-    libjasper1 \
-    libharfbuzz0b \
-    libwebp6 \
-    libtiff5 \
-    libjasper1 \
     libharfbuzz0b \
     libwebp6
 
