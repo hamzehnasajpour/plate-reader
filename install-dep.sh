@@ -42,25 +42,36 @@ cd /tmp
 # Clone OpenALPR repository
 if [ ! -d "openalpr" ]; then
     git clone https://github.com/openalpr/openalpr.git
+    cd openalpr
+else
+    cd openalpr
+    git pull
 fi
 
-cd openalpr/src
+# Build and install OpenALPR C++ library
+cd src
 mkdir -p build
 cd build
 
-# Build and install OpenALPR
 cmake -D CMAKE_BUILD_TYPE=Release ..
 make -j$(nproc)
 sudo make install
 
-# Install Python bindings from source
-cd ../python
-sudo python3 setup.py install
-
 # Configure library path
 sudo ldconfig
 
-echo "✓ OpenALPR installed successfully"
+# Install Python bindings if they exist
+PYTHON_BINDING_DIR="../../src/bindings/python"
+if [ -d "$PYTHON_BINDING_DIR" ]; then
+    echo "✓ OpenALPR C++ library installed"
+    echo "Building Python bindings..."
+    cd "$PYTHON_BINDING_DIR"
+    sudo python3 setup.py install
+    echo "✓ Python bindings installed"
+else
+    echo "✓ OpenALPR C++ library installed (Python bindings not found in expected location)"
+    echo "Note: Python binding installation may need manual setup"
+fi
 
 echo "[4/4] Creating Python virtual environment and installing Python packages..."
 
