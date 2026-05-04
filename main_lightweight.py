@@ -191,7 +191,7 @@ def extract_plate_text(frame, rect):
         
         # Run Tesseract OCR
         config = '--psm 8 --oem 3 -c tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
-        text = pytesseract.image_to_string(upscaled, config=config, timeout=5).strip().upper()
+        text = pytesseract.image_to_string(upscaled, config=config, timeout=2).strip().upper()
         
         if text and MIN_TEXT_LENGTH <= len(text) <= MAX_TEXT_LENGTH:
             # Confidence based on text length
@@ -282,6 +282,10 @@ def capture_and_analyze():
                         
                         # License plates are typically wider than tall (configurable ratio)
                         if MIN_ASPECT_RATIO < ratio < MAX_ASPECT_RATIO and w > MIN_WIDTH and h > MIN_HEIGHT:
+                            # Skip very small regions (not worth OCR time)
+                            if w < 60 or h < 25:
+                                continue
+                            
                             # Check fill ratio
                             area = w * h
                             contour_area = cv2.contourArea(contour)
