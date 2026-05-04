@@ -2,6 +2,7 @@
 #
 # Dependency Installation Script for Plate Reader
 # This script installs all required system and Python dependencies
+# Uses YOLOv8 + EasyOCR for license plate detection and OCR
 #
 
 set -e
@@ -11,71 +12,27 @@ echo "Plate Reader - Dependency Installation"
 echo "=========================================="
 echo ""
 
-# Check if running on Linux
-if [[ ! "$OSTYPE" == "linux-gnu"* ]]; then
-    echo "Warning: This script is designed for Linux. macOS users should use Homebrew."
-fi
-
-echo "[1/4] Updating system packages..."
+echo "[1/2] Installing system dependencies..."
 sudo apt-get update
-
-echo "[2/4] Installing build dependencies..."
 sudo apt-get install -y \
     python3-dev \
     python3-pip \
     python3-venv \
     build-essential \
-    cmake \
-    git \
-    curl \
-    wget \
-    libcurl4-openssl-dev \
-    libtesseract-dev \
-    libleptonica-dev \
-    libopencv-dev \
-    python3-opencv \
-    liblog4cplus-dev
+    libatlas-base-dev \
+    libjasper-dev \
+    libtiff5 \
+    libjasper1 \
+    libharfbuzz0b \
+    libwebp6 \
+    libtiff5 \
+    libjasper1 \
+    libharfbuzz0b \
+    libwebp6
 
-echo "[3/4] Installing OpenALPR from source..."
-cd /tmp
+echo "[2/2] Creating Python virtual environment and installing Python packages..."
 
-# Clone OpenALPR repository
-if [ ! -d "openalpr" ]; then
-    git clone https://github.com/openalpr/openalpr.git
-    cd openalpr
-else
-    cd openalpr
-    git pull
-fi
-
-# Build and install OpenALPR C++ library
-cd src
-mkdir -p build
-cd build
-
-cmake -D CMAKE_BUILD_TYPE=Release ..
-make -j$(nproc)
-sudo make install
-
-# Configure library path
-sudo ldconfig
-
-# Install Python bindings if they exist
-PYTHON_BINDING_DIR="../../src/bindings/python"
-if [ -d "$PYTHON_BINDING_DIR" ]; then
-    echo "✓ OpenALPR C++ library installed"
-    echo "Building Python bindings..."
-    cd "$PYTHON_BINDING_DIR"
-    sudo python3 setup.py install
-    echo "✓ Python bindings installed"
-else
-    echo "✓ OpenALPR C++ library installed (Python bindings not found in expected location)"
-    echo "Note: Python binding installation may need manual setup"
-fi
-
-echo "[4/4] Creating Python virtual environment and installing Python packages..."
-
-# Navigate back to project directory
+# Navigate to project directory
 cd /home/hamzeh/dev/plate-reader
 
 # Remove existing venv to ensure clean installation
@@ -94,11 +51,13 @@ source venv/bin/activate
 # Upgrade pip, setuptools, and wheel
 pip install --upgrade pip setuptools wheel
 
-# Install numpy first (required for OpenCV)
-pip install numpy==1.23.5
-
 # Install Python dependencies
+echo "Installing Python packages (this may take a few minutes)..."
 pip install -r requirements.txt
+
+# Download YOLO model on first install
+echo "Downloading YOLO model..."
+python3 -c "from ultralytics import YOLO; YOLO('yolov8n.pt')"
 
 echo ""
 echo "=========================================="
@@ -111,3 +70,4 @@ echo ""
 echo "To start the plate reader, run:"
 echo "  python3 main.py"
 echo ""
+

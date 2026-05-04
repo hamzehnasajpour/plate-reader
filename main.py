@@ -3,27 +3,32 @@
 License Plate Reader
 Captures frames from USB camera every 2 seconds and identifies license plates.
 Stores detected plate numbers with timestamps to a log file.
+
+Uses YOLOv8 for plate detection and EasyOCR for text recognition.
 """
 
 import cv2
 import time
 from datetime import datetime
 import os
-from openalpr import Alpr
+from ultralytics import YOLO
+import easyocr
+import numpy as np
 
 # Configuration
 CAMERA_INDEX = 0  # Default USB camera (change if using a different camera)
 CAPTURE_INTERVAL = 2  # Capture every 2 seconds
 OUTPUT_FILE = "plate_log.txt"
+CONFIDENCE_THRESHOLD = 0.5  # Only log plates with >50% confidence
 
-# Initialize OpenALPR
-alpr = Alpr("us", "/etc/openalpr/openalpr.conf", "/usr/share/openalpr/runtime_data")
+# Initialize models
+print("Loading YOLO model...")
+yolo_model = YOLO("yolov8n.pt")  # Nano model (fastest)
 
-if not alpr.is_loaded():
-    print("Error loading OpenALPR")
-    exit(1)
+print("Loading OCR model...")
+reader = easyocr.Reader(['en'], gpu=False)  # Set gpu=True if you have CUDA
 
-alpr.set_top_n(3)  # Get top 3 results
+print("✓ Models loaded successfully\n")
 
 
 def init_log_file():
@@ -34,15 +39,55 @@ def init_log_file():
             f.write("=" * 50 + "\n")
 
 
-def log_plate(plate_number):
+def log_plate(plate_number, confidence=None):
     """Log detected plate number with timestamp."""
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    log_entry = f"{plate_number} | {timestamp}\n"
+    conf_str = f" ({confidence:.1f}%)" if confidence else ""
+    log_entry = f"{plate_number}{conf_str} | {timestamp}\n"
     
     with open(OUTPUT_FILE, 'a') as f:
         f.write(log_entry)
     
-    print(f"✓ Detected: {plate_number} at {timestamp}")
+    print(f"✓ Detected: {plate_number}{conf_str} at {timestamp}")
+
+
+def extract_plate_text(frame, box):
+    """Extract text from detected license plate region."""
+    x1, y1, x2, y2 = box
+    x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2)
+    
+    # Crop the plate region
+    plate_crop = frame[y1:y2, x1:x2]
+    
+    if plate_crop.size == 0:
+        return None, 0
+    
+    # Enhance the image for better OCR
+    gray = cv2.cvtColor(plate_crop, cv2.COLOR_BGR2GRAY)
+    contrast = cv2.convertScaleAbs(gray, alpha=1.5, beta=30)
+    
+    # Run OCR
+    results = reader.readtext(contrast, detail=0)
+    
+    if results:
+        text = ''.join(results).upper().replace(' ', '')
+        # Simple confidence score based on text length (rough estimate)
+        confidence = min(100, len(text) * 15)
+        return text, confidence
+    
+    return None, 0
+
+
+def is_likely_plate(text):
+    """Check if detected text looks like a license plate."""
+    if not text or len(text) < 3:
+        return False
+    
+    # License plates typically have mix of letters and numbers
+    has_letter = any(c.isalpha() for c in text)
+    has_digit = any(c.isdigit() for c in text)
+    
+    return has_letter and has_digit
 
 
 def capture_and_analyze():
@@ -58,6 +103,8 @@ def capture_and_analyze():
     
     init_log_file()
     last_capture_time = 0
+    last_detected_plate = None
+    last_detection_time = 0
     
     while True:
         ret, frame = cap.read()
@@ -72,25 +119,35 @@ def capture_and_analyze():
         if current_time - last_capture_time >= CAPTURE_INTERVAL:
             last_capture_time = current_time
             
-            # Analyze frame for license plates
-            results = alpr.recognize_ndarray(frame)
+            # Run YOLO detection
+            results = yolo_model(frame, conf=0.3, verbose=False)
             
-            # Process results
-            if results["results"]:
-                for result in results["results"]:
-                    candidates = result["candidates"]
-                    if candidates:
-                        # Get the top candidate (most confident)
-                        top_plate = candidates[0]["plate"]
-                        confidence = candidates[0]["confidence"]
+            detections_found = False
+            
+            # Process detections
+            for result in results:
+                boxes = result.boxes
+                
+                for box in boxes:
+                    x1, y1, x2, y2 = box.xyxy[0]
+                    conf = box.conf[0].item()
+                    
+                    # Extract text from detected region
+                    plate_text, ocr_conf = extract_plate_text(frame, [x1, y1, x2, y2])
+                    
+                    if plate_text and is_likely_plate(plate_text) and ocr_conf >= CONFIDENCE_THRESHOLD:
+                        detections_found = True
                         
-                        # Only log if confidence is reasonable (>50%)
-                        if confidence > 50:
-                            log_plate(f"{top_plate} (confidence: {confidence:.1f}%)")
-            else:
-                print(".", end="", flush=True)  # Indicator of scanning
+                        # Avoid logging same plate multiple times
+                        if plate_text != last_detected_plate or (current_time - last_detection_time) > 5:
+                            log_plate(plate_text, ocr_conf)
+                            last_detected_plate = plate_text
+                            last_detection_time = current_time
+            
+            if not detections_found:
+                print(".", end="", flush=True)
         
-        # Display frame (optional - for debugging)
+        # Display frame with detection
         cv2.imshow("Plate Reader", frame)
         
         # Press 'q' to quit
@@ -100,7 +157,6 @@ def capture_and_analyze():
     
     cap.release()
     cv2.destroyAllWindows()
-    alpr.unload()
     print(f"Results saved to {OUTPUT_FILE}")
 
 
@@ -109,7 +165,7 @@ if __name__ == "__main__":
         capture_and_analyze()
     except KeyboardInterrupt:
         print("\nInterrupted by user")
-        alpr.unload()
     except Exception as e:
         print(f"Error: {e}")
-        alpr.unload()
+        import traceback
+        traceback.print_exc()
