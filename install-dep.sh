@@ -31,7 +31,9 @@ sudo apt-get install -y \
     wget \
     libcurl4-openssl-dev \
     libtesseract-dev \
-    libleptonica-dev
+    libleptonica-dev \
+    libopencv-dev \
+    python3-opencv
 
 echo "[3/4] Installing OpenALPR from source..."
 cd /tmp
