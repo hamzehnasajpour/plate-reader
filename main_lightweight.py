@@ -223,7 +223,6 @@ def capture_and_analyze():
     init_log_file()
     last_capture_time = 0
     last_detected_plate = None
-    last_detection_time = 0
     detection_count = 0
     
     # Create display window if enabled
@@ -292,11 +291,10 @@ def capture_and_analyze():
                                     detections_found = True
                                     valid_plates.append((x, y, w, h, plate_text, ocr_conf))
                                     
-                                    # Avoid duplicates
-                                    if plate_text != last_detected_plate or (current_time - last_detection_time) > 5:
+                                    # Only store if different from last detected plate
+                                    if plate_text != last_detected_plate:
                                         log_plate(plate_text, ocr_conf, frame, (x, y, w, h))
                                         last_detected_plate = plate_text
-                                        last_detection_time = current_time
                     
                     if not detections_found:
                         print(" [no valid plates]", end="")
