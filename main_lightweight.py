@@ -84,10 +84,22 @@ def extract_plate_text(frame, rect):
         if region.size == 0:
             return None, 0
         
-        # Enhance for OCR
+        # Enhance for OCR - aggressive preprocessing
         gray = cv2.cvtColor(region, cv2.COLOR_BGR2GRAY)
-        _, binary = cv2.threshold(gray, 150, 255, cv2.THRESH_BINARY)
-        upscaled = cv2.resize(binary, (0, 0), fx=2, fy=2)
+        
+        # Improve contrast with CLAHE
+        clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
+        gray = clahe.apply(gray)
+        
+        # Threshold
+        _, binary = cv2.threshold(gray, 140, 255, cv2.THRESH_BINARY)
+        
+        # Upscale aggressively
+        scale = max(4, int(300 / max(w, h)))
+        upscaled = cv2.resize(binary, (0, 0), fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
+        
+        # Denoise
+        upscaled = cv2.fastNlMeansDenoising(upscaled, h=10)
         
         # Run Tesseract
         config = '--psm 8 -c tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
@@ -148,35 +160,50 @@ def capture_and_analyze():
                 detection_count += 1
                 
                 try:
-                    # Detect objects (regions of interest)
+                    # Detect plate regions using edge detection
                     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-                    rects = cascade.detectMultiScale(gray, 1.3, 5)
+                    gray = cv2.bilateralFilter(gray, 11, 17, 17)
+                    edges = cv2.Canny(gray, 30, 200)
                     
-                    print(f"\n[{datetime.now().strftime('%H:%M:%S')}] Detection #{detection_count}: Found {len(rects)} objects", end="")
+                    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
+                    edges = cv2.dilate(edges, kernel, iterations=3)
+                    
+                    contours, _ = cv2.findContours(edges, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+                    
+                    print(f"\n[{datetime.now().strftime('%H:%M:%S')}] Detection #{detection_count}: Found {len(contours)} contours", end="")
                     
                     detections_found = False
                     
-                    # Filter detections by size (license plates are usually specific ratio)
-                    for x, y, w, h in rects:
-                        # Filter by aspect ratio (license plates are typically wider)
+                    # Analyze contours
+                    for contour in contours:
+                        x, y, w, h = cv2.boundingRect(contour)
+                        
+                        if w < 20 or h < 10:
+                            continue
+                        
                         ratio = w / h if h > 0 else 0
                         
-                        # More flexible ratio: 1.5 to 6 (wider range for different plate types)
-                        if 1.5 < ratio < 6 and w > 30 and h > 10:  # Loosen constraints
-                            print(f" -> Plate-like region detected (ratio: {ratio:.2f})", end="")
-                            plate_text, ocr_conf = extract_plate_text(frame, (x, y, w, h))
+                        # License plates are typically 2-5 times wider than tall
+                        if 2 < ratio < 5 and w > 30 and h > 10:
+                            # Check fill ratio
+                            area = w * h
+                            contour_area = cv2.contourArea(contour)
+                            fill_ratio = contour_area / area if area > 0 else 0
                             
-                            if plate_text:
-                                print(f" -> OCR result: '{plate_text}' ({ocr_conf:.1f}%)", end="")
-                            
-                            if plate_text and is_likely_plate(plate_text) and ocr_conf >= CONFIDENCE_THRESHOLD:
-                                detections_found = True
+                            if 0.4 < fill_ratio < 0.95:
+                                plate_text, ocr_conf = extract_plate_text(frame, (x, y, w, h))
                                 
-                                # Avoid duplicates
-                                if plate_text != last_detected_plate or (current_time - last_detection_time) > 5:
-                                    log_plate(plate_text, ocr_conf, frame)
-                                    last_detected_plate = plate_text
-                                    last_detection_time = current_time
+                                if plate_text:
+                                    print(f" -> Found: '{plate_text}'", end="")
+                                
+                                if plate_text and is_likely_plate(plate_text) and ocr_conf >= CONFIDENCE_THRESHOLD:
+                                    detections_found = True
+                                    
+                                    # Avoid duplicates
+                                    if plate_text != last_detected_plate or (current_time - last_detection_time) > 5:
+                                        log_plate(plate_text, ocr_conf, frame)
+                                        last_detected_plate = plate_text
+                                        last_detection_time = current_time
                     
                     if not detections_found:
                         print(" [no valid plates]", end="")
