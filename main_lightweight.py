@@ -119,14 +119,6 @@ def extract_plate_text(frame, rect):
         print(f"OCR error: {e}", file=sys.stderr)
     
     return None, 0
-        
-        if text and len(text) >= 3:
-            confidence = min(100, len(text) * 15)
-            return text, confidence
-    except Exception as e:
-        print(f"OCR error: {e}", file=sys.stderr)
-    
-    return None, 0
 
 
 def is_likely_plate(text):
