@@ -75,40 +75,39 @@ def extract_and_recognize(frame, x, y, w, h):
     try:
         crop = frame[y:y+h, x:x+w]
         
-        # Enhance for OCR - more aggressive preprocessing
+        # Enhance for OCR - improved pipeline
         gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
         
         # Improve contrast with CLAHE
-        clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
+        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
         gray = clahe.apply(gray)
         
-        # Threshold
-        _, binary = cv2.threshold(gray, 140, 255, cv2.THRESH_BINARY)
+        # Morphological operations
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2))
+        gray = cv2.morphologyEx(gray, cv2.MORPH_CLOSE, kernel)
         
-        # Upscale aggressively for small regions
-        scale = max(4, int(300 / max(w, h)))  # Scale to make text ~300px wide
+        # Adaptive threshold (better than fixed)
+        binary = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+                                       cv2.THRESH_BINARY, 11, 2)
+        
+        # Upscale aggressively
+        scale = max(5, int(400 / max(w, h)))  # Target 400px
         upscaled = cv2.resize(binary, (0, 0), fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
         
         # Denoise
         upscaled = cv2.fastNlMeansDenoising(upscaled, h=10)
         
-        # OCR with multiple PSM modes (try different if first fails)
-        config_modes = [
-            '--psm 8 -c tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789',
-            '--psm 7 -c tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789',
-            '--psm 6 -c tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789',
-        ]
+        # OCR with better config
+        config = '--psm 8 --oem 3 -c tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+        text = pytesseract.image_to_string(upscaled, config=config, timeout=5).strip().upper()
         
-        for config in config_modes:
-            text = pytesseract.image_to_string(upscaled, config=config, timeout=5).strip().upper()
+        if text and len(text) >= 3:
+            has_letters = any(c.isalpha() for c in text)
+            has_digits = any(c.isdigit() for c in text)
             
-            if text and len(text) >= 3:
-                has_letters = any(c.isalpha() for c in text)
-                has_digits = any(c.isdigit() for c in text)
-                
-                if has_letters and has_digits:
-                    confidence = min(100, len(text) * 12)
-                    return text, confidence
+            if has_letters and has_digits:
+                confidence = min(100, len(text) * 12)
+                return text, confidence
     except Exception as e:
         pass
     

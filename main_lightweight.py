@@ -84,26 +84,41 @@ def extract_plate_text(frame, rect):
         if region.size == 0:
             return None, 0
         
-        # Enhance for OCR - aggressive preprocessing
+        # Enhance for OCR - improved pipeline
         gray = cv2.cvtColor(region, cv2.COLOR_BGR2GRAY)
         
         # Improve contrast with CLAHE
-        clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
+        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
         gray = clahe.apply(gray)
         
-        # Threshold
-        _, binary = cv2.threshold(gray, 140, 255, cv2.THRESH_BINARY)
+        # Morphological operations to clean up
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2))
+        gray = cv2.morphologyEx(gray, cv2.MORPH_CLOSE, kernel)
         
-        # Upscale aggressively
-        scale = max(4, int(300 / max(w, h)))
+        # Adaptive threshold (better than fixed threshold)
+        binary = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+                                       cv2.THRESH_BINARY, 11, 2)
+        
+        # Upscale aggressively - larger text = better OCR
+        scale = max(5, int(400 / max(w, h)))  # Target 400px width
         upscaled = cv2.resize(binary, (0, 0), fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
         
-        # Denoise
+        # Final denoise
         upscaled = cv2.fastNlMeansDenoising(upscaled, h=10)
         
-        # Run Tesseract
-        config = '--psm 8 -c tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+        # Run Tesseract OCR
+        config = '--psm 8 --oem 3 -c tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
         text = pytesseract.image_to_string(upscaled, config=config, timeout=5).strip().upper()
+        
+        if text and len(text) >= 3:
+            # Confidence based on text length
+            confidence = min(100, len(text) * 15)
+            return text, confidence
+    except Exception as e:
+        # Log error but continue processing
+        print(f"OCR error: {e}", file=sys.stderr)
+    
+    return None, 0
         
         if text and len(text) >= 3:
             confidence = min(100, len(text) * 15)
