@@ -88,27 +88,12 @@ def save_config(actual_width, actual_height, zoom_level, zoom_region_x, zoom_reg
     except Exception as e:
         print(f"Warning: Could not save config: {e}")
 
-def draw_ui_overlay(frame, detection_count, is_scanning, detected_rectangles, valid_plates, zoom_level=1.0, zoom_region_x=0, zoom_region_y=0, zoom_region_w=640, zoom_region_h=480, actual_width=640, actual_height=480, scanning_enabled=True):
+def draw_ui_overlay(frame, detection_count, is_scanning, detected_rectangles, valid_plates):
     """
-    Draw UI overlay with status information and detection rectangles.
-    
-    Args:
-        frame: Input frame
-        detection_count: Number of detection cycles
-        is_scanning: Whether currently in detection mode
-        detected_rectangles: List of (x, y, w, h) all detected regions
-        valid_plates: List of (x, y, w, h, text, conf) valid plates
-        zoom_level: Current zoom level
-        zoom_region_x: X position of zoom region
-        zoom_region_y: Y position of zoom region
-        zoom_region_w: Width of zoom region
-        zoom_region_h: Height of zoom region
-        actual_width: Actual camera width
-        actual_height: Actual camera height
-        scanning_enabled: Whether scanning is enabled
+    Draw only detection rectangles on the captured frame.
+    Status bar is drawn separately on the resized display frame.
     """
     display_frame = frame.copy()
-    h, w = display_frame.shape[:2]
     
     # Draw all detected regions (yellow boxes)
     for x, y, bw, bh in detected_rectangles:
@@ -122,30 +107,35 @@ def draw_ui_overlay(frame, detection_count, is_scanning, detected_rectangles, va
         cv2.putText(display_frame, text_label, text_pos, 
                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
     
+    return display_frame
+
+def draw_status_overlay(display_frame, detection_count, is_scanning, zoom_level, zoom_region_w, zoom_region_h, actual_width, actual_height, scanning_enabled):
+    """
+    Draw status bar and shortcuts on resized display frame.
+    Called AFTER zoom crop and resize to ensure visibility.
+    """
+    h, w = display_frame.shape[:2]
+    
     # Draw status bar at top
-    status_bar_height = 90
-    cv2.rectangle(display_frame, (0, 0), (w, status_bar_height), (50, 50, 50), -1)
+    cv2.rectangle(display_frame, (0, 0), (w, 100), (40, 40, 40), -1)
     
     # Status text
     scan_status = "[SCANNING]" if is_scanning else "[READY]"
     scan_enabled_status = "✓ ON" if scanning_enabled else "✗ OFF"
     status_text = f"Detection #{detection_count} {scan_status} | Scan: {scan_enabled_status}"
-    cv2.putText(display_frame, status_text, (10, 22), 
-               cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 1)
+    cv2.putText(display_frame, status_text, (15, 28), 
+               cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
     
     # Resolution, zoom, and scope info
     info_text = f"Res: {actual_width}×{actual_height} | Zoom: {zoom_level:.1f}x | Scope: {zoom_region_w}×{zoom_region_h}"
-    cv2.putText(display_frame, info_text, (10, 45), 
-               cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 200, 200), 1)
+    cv2.putText(display_frame, info_text, (15, 55), 
+               cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 200, 200), 1)
     
     # Shortcut keys highlighted
-    shortcut_color = (0, 255, 255) if scanning_enabled else (0, 100, 200)  # Cyan if on, blue if off
-    shortcuts = "Keys: [S]can toggle [+/-] zoom  [↑↓←→] move  [Q]uit"
-    cv2.putText(display_frame, shortcuts, (10, 68), 
-               cv2.FONT_HERSHEY_SIMPLEX, 0.45, shortcut_color, 1)
-    
-    cv2.putText(display_frame, "Press 'q' to quit", (10, h - 10),
-               cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1)
+    shortcut_color = (0, 255, 255) if scanning_enabled else (0, 100, 200)
+    shortcuts = "Keys: [S]can  [+/-]Zoom  [↑↓←→]Move  [Q]uit"
+    cv2.putText(display_frame, shortcuts, (15, 82), 
+               cv2.FONT_HERSHEY_SIMPLEX, 0.55, shortcut_color, 2)
     
     return display_frame
 
@@ -294,7 +284,7 @@ def capture_and_analyze():
     last_capture_time = 0
     last_detected_plate = None
     detection_count = 0
-    scanning_enabled = True  # Toggle with 's' key
+    scanning_enabled = False  # Default OFF - press 's' to start scanning
     
     # Zoom region (x, y, width, height) - starts at center
     zoom_level = 1.0
@@ -315,8 +305,8 @@ def capture_and_analyze():
     
     # Create display window if enabled
     if SHOW_DISPLAY:
-        cv2.namedWindow("License Plate Reader", cv2.WINDOW_NORMAL)
-        cv2.resizeWindow("License Plate Reader", 960, 720)
+        cv2.namedWindow("License Plate Reader", cv2.WINDOW_FULLSCREEN)
+        cv2.setWindowProperty("License Plate Reader", cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
     
     try:
         while True:
@@ -403,10 +393,7 @@ def capture_and_analyze():
                 zoom_region_height = int(actual_height / zoom_level)
                 
                 display_frame = draw_ui_overlay(frame, detection_count, is_scanning, 
-                                               detected_rectangles, valid_plates, zoom_level,
-                                               zoom_region_x, zoom_region_y, 
-                                               zoom_region_width, zoom_region_height,
-                                               actual_width, actual_height, scanning_enabled)
+                                               detected_rectangles, valid_plates)
                 
                 # Apply mobile-like zoom (crop and display only zoomed region)
                 fh, fw = display_frame.shape[:2]
@@ -419,6 +406,11 @@ def capture_and_analyze():
                 # Resize to display size
                 display_frame = cv2.resize(cropped, (960, 720))
                 
+                # Draw status overlay AFTER zoom crop (now visible!)
+                display_frame = draw_status_overlay(display_frame, detection_count, is_scanning,
+                                                     zoom_level, zoom_region_width, zoom_region_height,
+                                                     actual_width, actual_height, scanning_enabled)
+                
                 cv2.imshow("License Plate Reader", display_frame)
                 
                 key = cv2.waitKey(1) & 0xFF
@@ -429,8 +421,9 @@ def capture_and_analyze():
                     print("\nStopping...")
                     break
                 elif key == ord('s') or key == ord('S'):
-                    # Toggle scanning on/off
+                    # Toggle scanning on/off and reset detection timer
                     scanning_enabled = not scanning_enabled
+                    last_capture_time = current_time  # Reset timer so interval restarts
                     status_text = "✓ Scanning ENABLED" if scanning_enabled else "✗ Scanning DISABLED"
                     print(f"\n{status_text}")
                 elif key == ord('+') or key == ord('='):
