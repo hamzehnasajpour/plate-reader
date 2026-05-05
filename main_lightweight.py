@@ -281,7 +281,7 @@ def capture_and_analyze():
     print("Press Ctrl+C to stop\n")
     
     init_log_file()
-    last_capture_time = 0
+    last_capture_time = time.time()  # Initialize to now so is_scanning is False at startup
     last_detected_plate = None
     detection_count = 0
     scanning_enabled = False  # Default OFF - press 's' to start scanning
