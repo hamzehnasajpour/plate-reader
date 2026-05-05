@@ -38,6 +38,12 @@ MIN_HEIGHT = 10  # Minimum region height in pixels
 MIN_FILL_RATIO = 0.4  # Minimum contour fill ratio (0.0-1.0)
 MAX_FILL_RATIO = 0.95  # Maximum contour fill ratio (0.0-1.0)
 
+# Zoom settings
+ZOOM_MIN = 1.0
+ZOOM_MAX = 5.0
+ZOOM_STEP = 0.5
+MOVE_STEP = 20  # pixels per arrow key press
+
 # Create images directory if it doesn't exist
 Path(IMAGES_DIR).mkdir(exist_ok=True)
 
@@ -55,7 +61,7 @@ if cascade.empty():
 
 print("✓ Haar Cascade classifier loaded")
 
-def draw_ui_overlay(frame, detection_count, is_scanning, detected_rectangles, valid_plates):
+def draw_ui_overlay(frame, detection_count, is_scanning, detected_rectangles, valid_plates, zoom_level=1.0):
     """
     Draw UI overlay with status information and detection rectangles.
     
@@ -65,6 +71,7 @@ def draw_ui_overlay(frame, detection_count, is_scanning, detected_rectangles, va
         is_scanning: Whether currently in detection mode
         detected_rectangles: List of (x, y, w, h) all detected regions
         valid_plates: List of (x, y, w, h, text, conf) valid plates
+        zoom_level: Current zoom level
     """
     display_frame = frame.copy()
     h, w = display_frame.shape[:2]
@@ -91,7 +98,12 @@ def draw_ui_overlay(frame, detection_count, is_scanning, detected_rectangles, va
     cv2.putText(display_frame, status_text, (10, 22), 
                cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 1)
     
-    cv2.putText(display_frame, "Press 'q' to quit", (w - 180, 22),
+    # Zoom indicator
+    zoom_text = f"Zoom: {zoom_level:.1f}x [+/-]"
+    cv2.putText(display_frame, zoom_text, (w - 250, 22),
+               cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 200, 200), 1)
+    
+    cv2.putText(display_frame, "Press 'q' to quit", (10, h - 10),
                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1)
     
     return display_frame
@@ -223,7 +235,16 @@ def capture_and_analyze():
         print(f"Error: Cannot access camera at index {CAMERA_INDEX}")
         return
     
-    print(f"Camera opened. Capturing every {CAPTURE_INTERVAL} seconds...")
+    # Set to maximum resolution (1080p or higher)
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
+    
+    # Get actual resolution
+    actual_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    actual_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    
+    print(f"Camera opened. Resolution: {actual_width}×{actual_height}")
+    print(f"Capturing every {CAPTURE_INTERVAL} seconds...")
     print(f"Confidence threshold: {CONFIDENCE_THRESHOLD * 100}%")
     print(f"Images saved to: {IMAGES_DIR}/")
     print("Press Ctrl+C to stop\n")
@@ -232,6 +253,13 @@ def capture_and_analyze():
     last_capture_time = 0
     last_detected_plate = None
     detection_count = 0
+    
+    # Zoom region (x, y, width, height) - starts at center
+    zoom_level = 1.0
+    zoom_region_width = int(actual_width / zoom_level)
+    zoom_region_height = int(actual_height / zoom_level)
+    zoom_region_x = (actual_width - zoom_region_width) // 2
+    zoom_region_y = (actual_height - zoom_region_height) // 2
     
     # Create display window if enabled
     if SHOW_DISPLAY:
@@ -320,13 +348,53 @@ def capture_and_analyze():
             # Display live feed with overlay
             if SHOW_DISPLAY:
                 display_frame = draw_ui_overlay(frame, detection_count, is_scanning, 
-                                               detected_rectangles, valid_plates)
+                                               detected_rectangles, valid_plates, zoom_level)
+                
+                # Apply mobile-like zoom (crop and display only zoomed region)
+                fh, fw = display_frame.shape[:2]
+                x1 = max(0, zoom_region_x)
+                y1 = max(0, zoom_region_y)
+                x2 = min(actual_width, zoom_region_x + zoom_region_width)
+                y2 = min(actual_height, zoom_region_y + zoom_region_height)
+                
+                cropped = display_frame[y1:y2, x1:x2]
+                # Resize to display size
+                display_frame = cv2.resize(cropped, (960, 720))
+                
                 cv2.imshow("License Plate Reader", display_frame)
                 
                 key = cv2.waitKey(1) & 0xFF
                 if key == ord('q'):
                     print("\nStopping...")
                     break
+                elif key == ord('+') or key == ord('='):
+                    # Zoom in
+                    zoom_level = min(ZOOM_MAX, zoom_level + ZOOM_STEP)
+                    old_width = zoom_region_width
+                    old_height = zoom_region_height
+                    zoom_region_width = int(actual_width / zoom_level)
+                    zoom_region_height = int(actual_height / zoom_level)
+                    zoom_region_x += (old_width - zoom_region_width) // 2
+                    zoom_region_y += (old_height - zoom_region_height) // 2
+                    print(f"🔍 Zoom: {zoom_level:.1f}x")
+                elif key == ord('-') or key == ord('_'):
+                    # Zoom out
+                    zoom_level = max(ZOOM_MIN, zoom_level - ZOOM_STEP)
+                    old_width = zoom_region_width
+                    old_height = zoom_region_height
+                    zoom_region_width = int(actual_width / zoom_level)
+                    zoom_region_height = int(actual_height / zoom_level)
+                    zoom_region_x += (old_width - zoom_region_width) // 2
+                    zoom_region_y += (old_height - zoom_region_height) // 2
+                    print(f"🔍 Zoom: {zoom_level:.1f}x")
+                elif key == 82:  # Up arrow
+                    zoom_region_y = max(0, zoom_region_y - MOVE_STEP)
+                elif key == 84:  # Down arrow
+                    zoom_region_y = min(actual_height - zoom_region_height, zoom_region_y + MOVE_STEP)
+                elif key == 81:  # Left arrow
+                    zoom_region_x = max(0, zoom_region_x - MOVE_STEP)
+                elif key == 83:  # Right arrow
+                    zoom_region_x = min(actual_width - zoom_region_width, zoom_region_x + MOVE_STEP)
     
     except KeyboardInterrupt:
         print("\nStopping...")
