@@ -88,7 +88,7 @@ def save_config(actual_width, actual_height, zoom_level, zoom_region_x, zoom_reg
     except Exception as e:
         print(f"Warning: Could not save config: {e}")
 
-def draw_ui_overlay(frame, detection_count, is_scanning, detected_rectangles, valid_plates, zoom_level=1.0, zoom_region_x=0, zoom_region_y=0, zoom_region_w=640, zoom_region_h=480, actual_width=640, actual_height=480):
+def draw_ui_overlay(frame, detection_count, is_scanning, detected_rectangles, valid_plates, zoom_level=1.0, zoom_region_x=0, zoom_region_y=0, zoom_region_w=640, zoom_region_h=480, actual_width=640, actual_height=480, scanning_enabled=True):
     """
     Draw UI overlay with status information and detection rectangles.
     
@@ -105,6 +105,7 @@ def draw_ui_overlay(frame, detection_count, is_scanning, detected_rectangles, va
         zoom_region_h: Height of zoom region
         actual_width: Actual camera width
         actual_height: Actual camera height
+        scanning_enabled: Whether scanning is enabled
     """
     display_frame = frame.copy()
     h, w = display_frame.shape[:2]
@@ -122,12 +123,13 @@ def draw_ui_overlay(frame, detection_count, is_scanning, detected_rectangles, va
                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
     
     # Draw status bar at top
-    status_bar_height = 60
+    status_bar_height = 90
     cv2.rectangle(display_frame, (0, 0), (w, status_bar_height), (50, 50, 50), -1)
     
     # Status text
     scan_status = "[SCANNING]" if is_scanning else "[READY]"
-    status_text = f"Detection #{detection_count} {scan_status}"
+    scan_enabled_status = "✓ ON" if scanning_enabled else "✗ OFF"
+    status_text = f"Detection #{detection_count} {scan_status} | Scan: {scan_enabled_status}"
     cv2.putText(display_frame, status_text, (10, 22), 
                cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 1)
     
@@ -135,6 +137,12 @@ def draw_ui_overlay(frame, detection_count, is_scanning, detected_rectangles, va
     info_text = f"Res: {actual_width}×{actual_height} | Zoom: {zoom_level:.1f}x | Scope: {zoom_region_w}×{zoom_region_h}"
     cv2.putText(display_frame, info_text, (10, 45), 
                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 200, 200), 1)
+    
+    # Shortcut keys highlighted
+    shortcut_color = (0, 255, 255) if scanning_enabled else (0, 100, 200)  # Cyan if on, blue if off
+    shortcuts = "Keys: [S]can toggle [+/-] zoom  [↑↓←→] move  [Q]uit"
+    cv2.putText(display_frame, shortcuts, (10, 68), 
+               cv2.FONT_HERSHEY_SIMPLEX, 0.45, shortcut_color, 1)
     
     cv2.putText(display_frame, "Press 'q' to quit", (10, h - 10),
                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1)
@@ -286,6 +294,7 @@ def capture_and_analyze():
     last_capture_time = 0
     last_detected_plate = None
     detection_count = 0
+    scanning_enabled = True  # Toggle with 's' key
     
     # Zoom region (x, y, width, height) - starts at center
     zoom_level = 1.0
@@ -322,8 +331,8 @@ def capture_and_analyze():
             detected_rectangles = []
             valid_plates = []
             
-            # Detect every CAPTURE_INTERVAL seconds
-            if is_scanning:
+            # Detect every CAPTURE_INTERVAL seconds (only if scanning enabled)
+            if is_scanning and scanning_enabled:
                 last_capture_time = current_time
                 detection_count += 1
                 
@@ -397,7 +406,7 @@ def capture_and_analyze():
                                                detected_rectangles, valid_plates, zoom_level,
                                                zoom_region_x, zoom_region_y, 
                                                zoom_region_width, zoom_region_height,
-                                               actual_width, actual_height)
+                                               actual_width, actual_height, scanning_enabled)
                 
                 # Apply mobile-like zoom (crop and display only zoomed region)
                 fh, fw = display_frame.shape[:2]
@@ -419,6 +428,11 @@ def capture_and_analyze():
                     print(f"\n✓ Saved zoom settings: {zoom_level:.1f}x at ({zoom_region_x}, {zoom_region_y})")
                     print("\nStopping...")
                     break
+                elif key == ord('s') or key == ord('S'):
+                    # Toggle scanning on/off
+                    scanning_enabled = not scanning_enabled
+                    status_text = "✓ Scanning ENABLED" if scanning_enabled else "✗ Scanning DISABLED"
+                    print(f"\n{status_text}")
                 elif key == ord('+') or key == ord('='):
                     # Zoom in
                     zoom_level = min(ZOOM_MAX, zoom_level + ZOOM_STEP)
