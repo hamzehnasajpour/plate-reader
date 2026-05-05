@@ -10,6 +10,7 @@ import time
 from datetime import datetime
 import os
 import sys
+import json
 from collections import deque
 from pathlib import Path
 
@@ -29,6 +30,7 @@ IMAGES_DIR = "captured_plates"
 SHOW_DISPLAY = True  # Show live camera feed with detection visualization
 MIN_TEXT_LENGTH = 6  # Minimum plate text length
 MAX_TEXT_LENGTH = 6  # Maximum plate text length
+CONFIG_FILE = "zoom_config.json"  # Save/load zoom settings
 
 # Detection Filters (adjust to reduce false positives)
 MIN_ASPECT_RATIO = 2.0  # Width/Height ratio lower bound (plates are wider)
@@ -61,7 +63,32 @@ if cascade.empty():
 
 print("✓ Haar Cascade classifier loaded")
 
-def draw_ui_overlay(frame, detection_count, is_scanning, detected_rectangles, valid_plates, zoom_level=1.0):
+def load_config():
+    """Load zoom settings from file."""
+    if os.path.exists(CONFIG_FILE):
+        try:
+            with open(CONFIG_FILE, 'r') as f:
+                return json.load(f)
+        except Exception as e:
+            print(f"Warning: Could not load config: {e}")
+    return None
+
+def save_config(actual_width, actual_height, zoom_level, zoom_region_x, zoom_region_y):
+    """Save zoom settings to file."""
+    try:
+        config = {
+            'width': actual_width,
+            'height': actual_height,
+            'zoom_level': zoom_level,
+            'zoom_region_x': zoom_region_x,
+            'zoom_region_y': zoom_region_y
+        }
+        with open(CONFIG_FILE, 'w') as f:
+            json.dump(config, f, indent=2)
+    except Exception as e:
+        print(f"Warning: Could not save config: {e}")
+
+def draw_ui_overlay(frame, detection_count, is_scanning, detected_rectangles, valid_plates, zoom_level=1.0, zoom_region_x=0, zoom_region_y=0, zoom_region_w=640, zoom_region_h=480, actual_width=640, actual_height=480):
     """
     Draw UI overlay with status information and detection rectangles.
     
@@ -72,6 +99,12 @@ def draw_ui_overlay(frame, detection_count, is_scanning, detected_rectangles, va
         detected_rectangles: List of (x, y, w, h) all detected regions
         valid_plates: List of (x, y, w, h, text, conf) valid plates
         zoom_level: Current zoom level
+        zoom_region_x: X position of zoom region
+        zoom_region_y: Y position of zoom region
+        zoom_region_w: Width of zoom region
+        zoom_region_h: Height of zoom region
+        actual_width: Actual camera width
+        actual_height: Actual camera height
     """
     display_frame = frame.copy()
     h, w = display_frame.shape[:2]
@@ -89,7 +122,7 @@ def draw_ui_overlay(frame, detection_count, is_scanning, detected_rectangles, va
                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
     
     # Draw status bar at top
-    status_bar_height = 30
+    status_bar_height = 60
     cv2.rectangle(display_frame, (0, 0), (w, status_bar_height), (50, 50, 50), -1)
     
     # Status text
@@ -98,9 +131,9 @@ def draw_ui_overlay(frame, detection_count, is_scanning, detected_rectangles, va
     cv2.putText(display_frame, status_text, (10, 22), 
                cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 1)
     
-    # Zoom indicator
-    zoom_text = f"Zoom: {zoom_level:.1f}x [+/-]"
-    cv2.putText(display_frame, zoom_text, (w - 250, 22),
+    # Resolution, zoom, and scope info
+    info_text = f"Res: {actual_width}×{actual_height} | Zoom: {zoom_level:.1f}x | Scope: {zoom_region_w}×{zoom_region_h}"
+    cv2.putText(display_frame, info_text, (10, 45), 
                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 200, 200), 1)
     
     cv2.putText(display_frame, "Press 'q' to quit", (10, h - 10),
@@ -261,6 +294,16 @@ def capture_and_analyze():
     zoom_region_x = (actual_width - zoom_region_width) // 2
     zoom_region_y = (actual_height - zoom_region_height) // 2
     
+    # Load previous zoom settings if they exist
+    saved_config = load_config()
+    if saved_config and saved_config.get('width') == actual_width and saved_config.get('height') == actual_height:
+        zoom_level = saved_config.get('zoom_level', 1.0)
+        zoom_region_x = saved_config.get('zoom_region_x', zoom_region_x)
+        zoom_region_y = saved_config.get('zoom_region_y', zoom_region_y)
+        zoom_region_width = int(actual_width / zoom_level)
+        zoom_region_height = int(actual_height / zoom_level)
+        print(f"✓ Loaded previous zoom settings: {zoom_level:.1f}x at ({zoom_region_x}, {zoom_region_y})")
+    
     # Create display window if enabled
     if SHOW_DISPLAY:
         cv2.namedWindow("License Plate Reader", cv2.WINDOW_NORMAL)
@@ -347,8 +390,14 @@ def capture_and_analyze():
             
             # Display live feed with overlay
             if SHOW_DISPLAY:
+                zoom_region_width = int(actual_width / zoom_level)
+                zoom_region_height = int(actual_height / zoom_level)
+                
                 display_frame = draw_ui_overlay(frame, detection_count, is_scanning, 
-                                               detected_rectangles, valid_plates, zoom_level)
+                                               detected_rectangles, valid_plates, zoom_level,
+                                               zoom_region_x, zoom_region_y, 
+                                               zoom_region_width, zoom_region_height,
+                                               actual_width, actual_height)
                 
                 # Apply mobile-like zoom (crop and display only zoomed region)
                 fh, fw = display_frame.shape[:2]
@@ -365,6 +414,9 @@ def capture_and_analyze():
                 
                 key = cv2.waitKey(1) & 0xFF
                 if key == ord('q'):
+                    # Save zoom settings before quitting
+                    save_config(actual_width, actual_height, zoom_level, zoom_region_x, zoom_region_y)
+                    print(f"\n✓ Saved zoom settings: {zoom_level:.1f}x at ({zoom_region_x}, {zoom_region_y})")
                     print("\nStopping...")
                     break
                 elif key == ord('+') or key == ord('='):
