@@ -420,7 +420,7 @@ def capture_and_analyze():
                     print(f"\n✓ Saved zoom settings: {zoom_level:.1f}x at ({zoom_region_x}, {zoom_region_y})")
                     print("\nStopping...")
                     break
-                elif key == ord('s') or key == ord('S'):
+                elif key == ord('s'):  # Only lowercase 's' to avoid collision with arrow keys
                     # Toggle scanning on/off and reset detection timer
                     scanning_enabled = not scanning_enabled
                     last_capture_time = current_time  # Reset timer so interval restarts
