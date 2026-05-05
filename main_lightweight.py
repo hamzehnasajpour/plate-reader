@@ -11,6 +11,7 @@ from datetime import datetime
 import os
 import sys
 import json
+import numpy as np
 from collections import deque
 from pathlib import Path
 
@@ -63,6 +64,27 @@ if cascade.empty():
 
 print("✓ Haar Cascade classifier loaded")
 
+def apply_brightness_contrast(frame, brightness_adjust, contrast_adjust):
+    """
+    Apply brightness and contrast adjustments to frame.
+    brightness_adjust: -100 to +100 (0 = no change)
+    contrast_adjust: -100 to +100 (0 = no change)
+    """
+    frame_adjusted = frame.copy().astype(np.float32)
+    
+    # Apply contrast (multiplier)
+    if contrast_adjust != 0:
+        alpha = (127 + contrast_adjust) / 127.0  # Scale to 0.2 - 1.8 range
+        frame_adjusted = frame_adjusted * alpha
+    
+    # Apply brightness (additive)
+    if brightness_adjust != 0:
+        frame_adjusted = frame_adjusted + brightness_adjust
+    
+    # Clip values to valid range
+    frame_adjusted = np.clip(frame_adjusted, 0, 255).astype(np.uint8)
+    return frame_adjusted
+
 def load_config():
     """Load zoom settings from file."""
     if os.path.exists(CONFIG_FILE):
@@ -73,15 +95,17 @@ def load_config():
             print(f"Warning: Could not load config: {e}")
     return None
 
-def save_config(actual_width, actual_height, zoom_level, zoom_region_x, zoom_region_y):
-    """Save zoom settings to file."""
+def save_config(actual_width, actual_height, zoom_level, zoom_region_x, zoom_region_y, brightness_adjust=0, contrast_adjust=0):
+    """Save zoom settings and brightness/contrast to file."""
     try:
         config = {
             'width': actual_width,
             'height': actual_height,
             'zoom_level': zoom_level,
             'zoom_region_x': zoom_region_x,
-            'zoom_region_y': zoom_region_y
+            'zoom_region_y': zoom_region_y,
+            'brightness_adjust': brightness_adjust,
+            'contrast_adjust': contrast_adjust
         }
         with open(CONFIG_FILE, 'w') as f:
             json.dump(config, f, indent=2)
@@ -109,15 +133,15 @@ def draw_ui_overlay(frame, detection_count, is_scanning, detected_rectangles, va
     
     return display_frame
 
-def draw_status_overlay(display_frame, detection_count, is_scanning, zoom_level, zoom_region_w, zoom_region_h, actual_width, actual_height, scanning_enabled):
+def draw_status_overlay(display_frame, detection_count, is_scanning, zoom_level, zoom_region_w, zoom_region_h, actual_width, actual_height, scanning_enabled, brightness_adjust, contrast_adjust):
     """
     Draw status bar and shortcuts on resized display frame.
     Called AFTER zoom crop and resize to ensure visibility.
     """
     h, w = display_frame.shape[:2]
     
-    # Draw status bar at top
-    cv2.rectangle(display_frame, (0, 0), (w, 100), (40, 40, 40), -1)
+    # Draw status bar at top (extended for brightness/contrast info)
+    cv2.rectangle(display_frame, (0, 0), (w, 125), (40, 40, 40), -1)
     
     # Status text
     scan_status = "[SCANNING]" if is_scanning else "[READY]"
@@ -131,11 +155,16 @@ def draw_status_overlay(display_frame, detection_count, is_scanning, zoom_level,
     cv2.putText(display_frame, info_text, (15, 55), 
                cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 200, 200), 1)
     
+    # Brightness/Contrast display
+    adjust_text = f"Brightness: {brightness_adjust:+d} | Contrast: {contrast_adjust:+d}"
+    cv2.putText(display_frame, adjust_text, (15, 75), 
+               cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 150, 100), 1)
+    
     # Shortcut keys highlighted
     shortcut_color = (0, 255, 255) if scanning_enabled else (0, 100, 200)
-    shortcuts = "Keys: [S]can  [+/-]Zoom  [↑↓←→]Move  [Q]uit"
-    cv2.putText(display_frame, shortcuts, (15, 82), 
-               cv2.FONT_HERSHEY_SIMPLEX, 0.55, shortcut_color, 2)
+    shortcuts = "[S]can [+/-]Zoom [1/2]Light [3/4]Contrast [↑↓←→]Move [Q]uit"
+    cv2.putText(display_frame, shortcuts, (15, 100), 
+               cv2.FONT_HERSHEY_SIMPLEX, 0.45, shortcut_color, 1)
     
     return display_frame
 
@@ -285,6 +314,8 @@ def capture_and_analyze():
     last_detected_plate = None
     detection_count = 0
     scanning_enabled = False  # Default OFF - press 's' to start scanning
+    brightness_adjust = 0  # -100 to +100
+    contrast_adjust = 0  # -100 to +100
     
     # Zoom region (x, y, width, height) - starts at center
     zoom_level = 1.0
@@ -301,7 +332,10 @@ def capture_and_analyze():
         zoom_region_y = saved_config.get('zoom_region_y', zoom_region_y)
         zoom_region_width = int(actual_width / zoom_level)
         zoom_region_height = int(actual_height / zoom_level)
+        brightness_adjust = saved_config.get('brightness_adjust', 0)
+        contrast_adjust = saved_config.get('contrast_adjust', 0)
         print(f"✓ Loaded previous zoom settings: {zoom_level:.1f}x at ({zoom_region_x}, {zoom_region_y})")
+        print(f"✓ Loaded brightness: {brightness_adjust}, contrast: {contrast_adjust}")
     
     # Create display window if enabled
     if SHOW_DISPLAY:
@@ -406,18 +440,23 @@ def capture_and_analyze():
                 # Resize to display size
                 display_frame = cv2.resize(cropped, (960, 720))
                 
+                # Apply brightness and contrast adjustments
+                display_frame = apply_brightness_contrast(display_frame, brightness_adjust, contrast_adjust)
+                
                 # Draw status overlay AFTER zoom crop (now visible!)
                 display_frame = draw_status_overlay(display_frame, detection_count, is_scanning,
                                                      zoom_level, zoom_region_width, zoom_region_height,
-                                                     actual_width, actual_height, scanning_enabled)
+                                                     actual_width, actual_height, scanning_enabled,
+                                                     brightness_adjust, contrast_adjust)
                 
                 cv2.imshow("License Plate Reader", display_frame)
                 
                 key = cv2.waitKey(1) & 0xFF
                 if key == ord('q'):
                     # Save zoom settings before quitting
-                    save_config(actual_width, actual_height, zoom_level, zoom_region_x, zoom_region_y)
+                    save_config(actual_width, actual_height, zoom_level, zoom_region_x, zoom_region_y, brightness_adjust, contrast_adjust)
                     print(f"\n✓ Saved zoom settings: {zoom_level:.1f}x at ({zoom_region_x}, {zoom_region_y})")
+                    print(f"✓ Saved brightness: {brightness_adjust}, contrast: {contrast_adjust}")
                     print("\nStopping...")
                     break
                 elif key == ord('s'):  # Only lowercase 's' to avoid collision with arrow keys
@@ -446,6 +485,22 @@ def capture_and_analyze():
                     zoom_region_x += (old_width - zoom_region_width) // 2
                     zoom_region_y += (old_height - zoom_region_height) // 2
                     print(f"🔍 Zoom: {zoom_level:.1f}x")
+                elif key == ord('1'):
+                    # Decrease brightness
+                    brightness_adjust = max(-100, brightness_adjust - 5)
+                    print(f"💡 Brightness: {brightness_adjust}")
+                elif key == ord('2'):
+                    # Increase brightness
+                    brightness_adjust = min(100, brightness_adjust + 5)
+                    print(f"💡 Brightness: {brightness_adjust}")
+                elif key == ord('3'):
+                    # Decrease contrast
+                    contrast_adjust = max(-100, contrast_adjust - 5)
+                    print(f"🎨 Contrast: {contrast_adjust}")
+                elif key == ord('4'):
+                    # Increase contrast
+                    contrast_adjust = min(100, contrast_adjust + 5)
+                    print(f"🎨 Contrast: {contrast_adjust}")
                 elif key == 82:  # Up arrow
                     zoom_region_y = max(0, zoom_region_y - MOVE_STEP)
                 elif key == 84:  # Down arrow
